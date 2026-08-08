@@ -4,7 +4,60 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Калькулятор</title>
+  <script>
+    (function () {
+      var saved = localStorage.getItem("calc-theme");
+      if (saved === "light" || saved === "dark") {
+        document.documentElement.dataset.theme = saved;
+      }
+    })();
+  </script>
   <style>
+    :root,
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --page-bg: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      --calc-bg: #1e1e2f;
+      --calc-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      --display-bg: #12121a;
+      --expression: #888;
+      --result: #e8e8e8;
+      --digit-bg: #2d2d44;
+      --digit-hover: #3a3a55;
+      --digit-fg: #fff;
+      --op-bg: #394867;
+      --op-hover: #4a5a7a;
+      --op-fg: #7eb8ff;
+      --fn-bg: #4a3f5c;
+      --fn-hover: #5c4f70;
+      --fn-fg: #ffb86c;
+      --theme-toggle-bg: #2d2d44;
+      --theme-toggle-hover: #3a3a55;
+      --theme-toggle-fg: #e8e8e8;
+    }
+
+    [data-theme="light"] {
+      color-scheme: light;
+      --page-bg: linear-gradient(145deg, #eef2f7 0%, #dde4ee 50%, #c9d4e4 100%);
+      --calc-bg: #f4f5f8;
+      --calc-shadow: 0 16px 40px rgba(30, 40, 60, 0.15);
+      --display-bg: #ffffff;
+      --expression: #6b7280;
+      --result: #1f2937;
+      --digit-bg: #e5e7eb;
+      --digit-hover: #d1d5db;
+      --digit-fg: #111827;
+      --op-bg: #dbeafe;
+      --op-hover: #bfdbfe;
+      --op-fg: #1d4ed8;
+      --fn-bg: #f3e8ff;
+      --fn-hover: #e9d5ff;
+      --fn-fg: #b45309;
+      --theme-toggle-bg: #e5e7eb;
+      --theme-toggle-hover: #d1d5db;
+      --theme-toggle-fg: #374151;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -17,19 +70,42 @@
       align-items: center;
       justify-content: center;
       font-family: system-ui, -apple-system, Segoe UI, sans-serif;
-      background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      background: var(--page-bg);
+      transition: background 0.25s ease;
     }
 
     .calculator {
       width: min(320px, 92vw);
-      background: #1e1e2f;
+      background: var(--calc-bg);
       border-radius: 16px;
       padding: 20px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      box-shadow: var(--calc-shadow);
+      transition: background 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .calc-header {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 12px;
+    }
+
+    .theme-toggle {
+      background: var(--theme-toggle-bg);
+      color: var(--theme-toggle-fg);
+      border: none;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .theme-toggle:hover {
+      background: var(--theme-toggle-hover);
     }
 
     .display {
-      background: #12121a;
+      background: var(--display-bg);
       border-radius: 10px;
       padding: 16px 14px;
       margin-bottom: 16px;
@@ -38,17 +114,18 @@
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
+      transition: background 0.25s ease;
     }
 
     .expression {
-      color: #888;
+      color: var(--expression);
       font-size: 0.85rem;
       min-height: 1.2em;
       word-break: break-all;
     }
 
     .result {
-      color: #e8e8e8;
+      color: var(--result);
       font-size: 2rem;
       font-weight: 600;
       word-break: break-all;
@@ -75,30 +152,30 @@
     }
 
     .digit {
-      background: #2d2d44;
-      color: #fff;
+      background: var(--digit-bg);
+      color: var(--digit-fg);
     }
 
     .digit:hover {
-      background: #3a3a55;
+      background: var(--digit-hover);
     }
 
     .op {
-      background: #394867;
-      color: #7eb8ff;
+      background: var(--op-bg);
+      color: var(--op-fg);
     }
 
     .op:hover {
-      background: #4a5a7a;
+      background: var(--op-hover);
     }
 
     .fn {
-      background: #4a3f5c;
-      color: #ffb86c;
+      background: var(--fn-bg);
+      color: var(--fn-fg);
     }
 
     .fn:hover {
-      background: #5c4f70;
+      background: var(--fn-hover);
     }
 
     .fn.clear {
@@ -127,6 +204,15 @@
 </head>
 <body>
   <div class="calculator" role="application" aria-label="Калькулятор">
+    <div class="calc-header">
+      <button
+        type="button"
+        class="theme-toggle"
+        id="theme-toggle"
+        aria-pressed="false"
+        aria-label="Переключить на светлую тему"
+      >Светлая тема</button>
+    </div>
     <div class="display">
       <div class="expression" id="expression" aria-live="polite"></div>
       <div class="result" id="result">0</div>
@@ -161,6 +247,33 @@
   <script>
     const expressionEl = document.getElementById("expression");
     const resultEl = document.getElementById("result");
+    const themeToggle = document.getElementById("theme-toggle");
+
+    function getTheme() {
+      return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    }
+
+    function updateThemeToggle() {
+      const light = getTheme() === "light";
+      themeToggle.textContent = light ? "Тёмная тема" : "Светлая тема";
+      themeToggle.setAttribute("aria-pressed", light ? "true" : "false");
+      themeToggle.setAttribute(
+        "aria-label",
+        light ? "Переключить на тёмную тему" : "Переключить на светлую тему"
+      );
+    }
+
+    function setTheme(theme) {
+      document.documentElement.dataset.theme = theme;
+      localStorage.setItem("calc-theme", theme);
+      updateThemeToggle();
+    }
+
+    themeToggle.addEventListener("click", () => {
+      setTheme(getTheme() === "light" ? "dark" : "light");
+    });
+
+    updateThemeToggle();
 
     let current = "0";
     let stored = null;
