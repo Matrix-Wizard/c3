@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Калькулятор</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    }
+
+    .calculator {
+      width: min(320px, 92vw);
+      background: #1e1e2f;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    }
+
+    .display {
+      background: #12121a;
+      border-radius: 10px;
+      padding: 16px 14px;
+      margin-bottom: 16px;
+      text-align: right;
+      min-height: 72px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+
+    .expression {
+      color: #888;
+      font-size: 0.85rem;
+      min-height: 1.2em;
+      word-break: break-all;
+    }
+
+    .result {
+      color: #e8e8e8;
+      font-size: 2rem;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    .keys {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 18px 0;
+      font-size: 1.15rem;
+      cursor: pointer;
+      transition: transform 0.08s, background 0.15s;
+      font-family: inherit;
+    }
+
+    button:active {
+      transform: scale(0.96);
+    }
+
+    .digit {
+      background: #2d2d44;
+      color: #fff;
+    }
+
+    .digit:hover {
+      background: #3a3a55;
+    }
+
+    .op {
+      background: #394867;
+      color: #7eb8ff;
+    }
+
+    .op:hover {
+      background: #4a5a7a;
+    }
+
+    .fn {
+      background: #4a3f5c;
+      color: #ffb86c;
+    }
+
+    .fn:hover {
+      background: #5c4f70;
+    }
+
+    .fn.clear {
+      background: #c0392b;
+      color: #fff;
+    }
+
+    .fn.clear:hover {
+      background: #e74c3c;
+    }
+
+    .equals {
+      background: #e94560;
+      color: #fff;
+      grid-column: span 2;
+    }
+
+    .equals:hover {
+      background: #ff5577;
+    }
+
+    .zero {
+      grid-column: span 2;
+    }
+  </style>
+</head>
+<body>
+  <div class="calculator" role="application" aria-label="Калькулятор">
+    <div class="display">
+      <div class="expression" id="expression" aria-live="polite"></div>
+      <div class="result" id="result">0</div>
+    </div>
+    <div class="keys">
+      <button type="button" class="fn clear" data-action="clear">C</button>
+      <button type="button" class="fn" data-action="backspace">⌫</button>
+      <button type="button" class="fn" data-action="percent">%</button>
+      <button type="button" class="op" data-action="operator" data-op="/">÷</button>
+
+      <button type="button" class="digit" data-action="digit" data-digit="7">7</button>
+      <button type="button" class="digit" data-action="digit" data-digit="8">8</button>
+      <button type="button" class="digit" data-action="digit" data-digit="9">9</button>
+      <button type="button" class="op" data-action="operator" data-op="*">×</button>
+
+      <button type="button" class="digit" data-action="digit" data-digit="4">4</button>
+      <button type="button" class="digit" data-action="digit" data-digit="5">5</button>
+      <button type="button" class="digit" data-action="digit" data-digit="6">6</button>
+      <button type="button" class="op" data-action="operator" data-op="-">−</button>
+
+      <button type="button" class="digit" data-action="digit" data-digit="1">1</button>
+      <button type="button" class="digit" data-action="digit" data-digit="2">2</button>
+      <button type="button" class="digit" data-action="digit" data-digit="3">3</button>
+      <button type="button" class="op" data-action="operator" data-op="+">+</button>
+
+      <button type="button" class="digit zero" data-action="digit" data-digit="0">0</button>
+      <button type="button" class="digit" data-action="decimal">,</button>
+      <button type="button" class="equals" data-action="equals">=</button>
+    </div>
+  </div>
+
+  <script>
+    const expressionEl = document.getElementById("expression");
+    const resultEl = document.getElementById("result");
+
+    let current = "0";
+    let stored = null;
+    let pendingOp = null;
+    let freshStart = false;
+
+    const OP_SYMBOL = { "+": "+", "-": "−", "*": "×", "/": "÷" };
+
+    function formatDisplay(numStr) {
+      if (numStr === "Ошибка") return numStr;
+      const n = parseFloat(numStr.replace(",", "."));
+      if (!Number.isFinite(n)) return "0";
+      const s = String(n);
+      return s.includes(".") ? s.replace(".", ",") : s;
+    }
+
+    function updateDisplay() {
+      resultEl.textContent = formatDisplay(current);
+      if (stored !== null && pendingOp) {
+        expressionEl.textContent =
+          formatDisplay(String(stored)) + " " + OP_SYMBOL[pendingOp];
+      } else {
+        expressionEl.textContent = "";
+      }
+    }
+
+    function inputDigit(d) {
+      if (freshStart || current === "Ошибка") {
+        current = d;
+        freshStart = false;
+      } else if (current === "0") {
+        current = d;
+      } else if (current.replace("-", "").replace(",", "").length < 12) {
+        current += d;
+      }
+      updateDisplay();
+    }
+
+    function inputDecimal() {
+      if (freshStart || current === "Ошибка") {
+        current = "0,";
+        freshStart = false;
+      } else if (!current.includes(",")) {
+        current += ",";
+      }
+      updateDisplay();
+    }
+
+    function clearAll() {
+      current = "0";
+      stored = null;
+      pendingOp = null;
+      freshStart = false;
+      updateDisplay();
+    }
+
+    function backspace() {
+      if (current === "Ошибка") {
+        clearAll();
+        return;
+      }
+      if (freshStart) return;
+      if (current.length <= 1 || (current.length === 2 && current.startsWith("-"))) {
+        current = "0";
+      } else {
+        current = current.slice(0, -1);
+      }
+      updateDisplay();
+    }
+
+    function toNumber(str) {
+      return parseFloat(str.replace(",", "."));
+    }
+
+    function compute(a, op, b) {
+      switch (op) {
+        case "+": return a + b;
+        case "-": return a - b;
+        case "*": return a * b;
+        case "/":
+          if (b === 0) return null;
+          return a / b;
+        default: return b;
+      }
+    }
+
+    function applyPending() {
+      if (stored === null || !pendingOp) return;
+      const a = stored;
+      const b = toNumber(current);
+      const out = compute(a, pendingOp, b);
+      if (out === null) {
+        current = "Ошибка";
+        stored = null;
+        pendingOp = null;
+        freshStart = true;
+        return;
+      }
+      stored = out;
+      current = String(out);
+    }
+
+    function setOperator(op) {
+      if (current === "Ошибка") return;
+      const value = toNumber(current);
+      if (stored !== null && pendingOp && !freshStart) {
+        applyPending();
+        if (current === "Ошибка") {
+          updateDisplay();
+          return;
+        }
+        stored = toNumber(current);
+      } else {
+        stored = value;
+      }
+      pendingOp = op;
+      freshStart = true;
+      updateDisplay();
+    }
+
+    function equals() {
+      if (pendingOp === null || stored === null || current === "Ошибка") return;
+      applyPending();
+      pendingOp = null;
+      stored = null;
+      freshStart = true;
+      updateDisplay();
+    }
+
+    function percent() {
+      if (current === "Ошибка") return;
+      const n = toNumber(current) / 100;
+      current = String(n);
+      updateDisplay();
+    }
+
+    document.querySelector(".keys").addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      const action = btn.dataset.action;
+
+      switch (action) {
+        case "digit":
+          inputDigit(btn.dataset.digit);
+          break;
+        case "decimal":
+          inputDecimal();
+          break;
+        case "operator":
+          setOperator(btn.dataset.op);
+          break;
+        case "equals":
+          equals();
+          break;
+        case "clear":
+          clearAll();
+          break;
+        case "backspace":
+          backspace();
+          break;
+        case "percent":
+          percent();
+          break;
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key >= "0" && e.key <= "9") inputDigit(e.key);
+      else if (e.key === "." || e.key === ",") inputDecimal();
+      else if (e.key === "+") setOperator("+");
+      else if (e.key === "-") setOperator("-");
+      else if (e.key === "*") setOperator("*");
+      else if (e.key === "/") {
+        e.preventDefault();
+        setOperator("/");
+      } else if (e.key === "Enter" || e.key === "=") equals();
+      else if (e.key === "Escape") clearAll();
+      else if (e.key === "Backspace") backspace();
+      else if (e.key === "%") percent();
+    });
+
+    updateDisplay();
+  </script>
+</body>
+</html>
