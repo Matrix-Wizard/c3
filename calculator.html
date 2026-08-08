@@ -34,6 +34,15 @@
       --theme-toggle-bg: #2d2d44;
       --theme-toggle-hover: #3a3a55;
       --theme-toggle-fg: #e8e8e8;
+      --history-bg: #12121a;
+      --history-border: #2d2d44;
+      --history-title: #aaa;
+      --history-text: #c8c8d0;
+      --history-time: #666;
+      --history-empty: #666;
+      --history-clear-bg: #2d2d44;
+      --history-clear-hover: #3a3a55;
+      --history-clear-fg: #aaa;
     }
 
     [data-theme="light"] {
@@ -56,6 +65,15 @@
       --theme-toggle-bg: #e5e7eb;
       --theme-toggle-hover: #d1d5db;
       --theme-toggle-fg: #374151;
+      --history-bg: #ffffff;
+      --history-border: #e5e7eb;
+      --history-title: #6b7280;
+      --history-text: #374151;
+      --history-time: #9ca3af;
+      --history-empty: #9ca3af;
+      --history-clear-bg: #e5e7eb;
+      --history-clear-hover: #d1d5db;
+      --history-clear-fg: #4b5563;
     }
 
     * {
@@ -200,6 +218,81 @@
     .zero {
       grid-column: span 2;
     }
+
+    .history {
+      background: var(--history-bg);
+      border: 1px solid var(--history-border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 16px;
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .history-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--history-title);
+    }
+
+    .history-clear {
+      background: var(--history-clear-bg);
+      color: var(--history-clear-fg);
+      border: none;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .history-clear:hover:not(:disabled) {
+      background: var(--history-clear-hover);
+    }
+
+    .history-clear:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .history-list {
+      list-style: none;
+      max-height: 120px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .history-empty {
+      font-size: 0.8rem;
+      color: var(--history-empty);
+      text-align: center;
+      padding: 4px 0;
+    }
+
+    .history-item {
+      font-size: 0.8rem;
+      line-height: 1.35;
+      color: var(--history-text);
+      word-break: break-all;
+    }
+
+    .history-item time {
+      display: block;
+      font-size: 0.65rem;
+      color: var(--history-time);
+      margin-top: 2px;
+    }
   </style>
 </head>
 <body>
@@ -217,6 +310,21 @@
       <div class="expression" id="expression" aria-live="polite"></div>
       <div class="result" id="result">0</div>
     </div>
+    <section class="history" aria-label="Журнал операций">
+      <div class="history-header">
+        <span class="history-title">Журнал операций</span>
+        <button
+          type="button"
+          class="history-clear"
+          id="history-clear"
+          disabled
+          aria-label="Очистить журнал операций"
+        >Очистить</button>
+      </div>
+      <ul class="history-list" id="history-list" aria-live="polite">
+        <li class="history-empty" id="history-empty">Пока нет записей</li>
+      </ul>
+    </section>
     <div class="keys">
       <button type="button" class="fn clear" data-action="clear">C</button>
       <button type="button" class="fn" data-action="backspace">⌫</button>
@@ -248,6 +356,13 @@
     const expressionEl = document.getElementById("expression");
     const resultEl = document.getElementById("result");
     const themeToggle = document.getElementById("theme-toggle");
+    const historyListEl = document.getElementById("history-list");
+    const historyEmptyEl = document.getElementById("history-empty");
+    const historyClearBtn = document.getElementById("history-clear");
+
+    const HISTORY_KEY = "calc-history";
+    const HISTORY_MAX = 50;
+    let history = [];
 
     function getTheme() {
       return document.documentElement.dataset.theme === "light" ? "light" : "dark";
@@ -274,6 +389,71 @@
     });
 
     updateThemeToggle();
+
+    function loadHistory() {
+      try {
+        const raw = localStorage.getItem(HISTORY_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        history = Array.isArray(parsed)
+          ? parsed.filter((e) => e && typeof e.text === "string").slice(0, HISTORY_MAX)
+          : [];
+      } catch {
+        history = [];
+      }
+    }
+
+    function saveHistory() {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    }
+
+    function formatHistoryTime(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toLocaleString("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+
+    function renderHistory() {
+      historyListEl.querySelectorAll(".history-item").forEach((el) => el.remove());
+      historyEmptyEl.hidden = history.length > 0;
+      historyClearBtn.disabled = history.length === 0;
+
+      history.forEach((entry) => {
+        const li = document.createElement("li");
+        li.className = "history-item";
+        li.textContent = entry.text;
+        if (entry.at) {
+          const timeEl = document.createElement("time");
+          timeEl.dateTime = entry.at;
+          timeEl.textContent = formatHistoryTime(entry.at);
+          li.appendChild(timeEl);
+        }
+        historyListEl.appendChild(li);
+      });
+    }
+
+    function addHistoryEntry(text) {
+      history.unshift({ text, at: new Date().toISOString() });
+      if (history.length > HISTORY_MAX) {
+        history.length = HISTORY_MAX;
+      }
+      saveHistory();
+      renderHistory();
+    }
+
+    function clearHistory() {
+      history = [];
+      saveHistory();
+      renderHistory();
+    }
+
+    historyClearBtn.addEventListener("click", clearHistory);
+    loadHistory();
+    renderHistory();
 
     let current = "0";
     let stored = null;
@@ -396,7 +576,19 @@
 
     function equals() {
       if (pendingOp === null || stored === null || current === "Ошибка") return;
+      const a = stored;
+      const b = toNumber(current);
+      const op = pendingOp;
       applyPending();
+      const line =
+        formatDisplay(String(a)) +
+        " " +
+        OP_SYMBOL[op] +
+        " " +
+        formatDisplay(String(b)) +
+        " = " +
+        formatDisplay(current);
+      addHistoryEntry(line);
       pendingOp = null;
       stored = null;
       freshStart = true;
