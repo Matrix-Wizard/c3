@@ -380,7 +380,14 @@
     </section>
   </div>
 
-  <script>
+  <script type="module">
+    import {
+      Calculator,
+      HistoryStore,
+      formatHistoryTime,
+      HISTORY_MAX,
+    } from "./calculator.js";
+
     const expressionEl = document.getElementById("expression");
     const resultEl = document.getElementById("result");
     const themeToggle = document.getElementById("theme-toggle");
@@ -389,8 +396,8 @@
     const historyClearBtn = document.getElementById("history-clear");
 
     const HISTORY_KEY = "calc-history";
-    const HISTORY_MAX = 50;
-    let history = [];
+    const historyStore = new HistoryStore(HISTORY_KEY, HISTORY_MAX);
+    const calc = new Calculator();
 
     function getTheme() {
       return document.documentElement.dataset.theme === "light" ? "light" : "dark";
@@ -418,39 +425,12 @@
 
     updateThemeToggle();
 
-    function loadHistory() {
-      try {
-        const raw = localStorage.getItem(HISTORY_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        history = Array.isArray(parsed)
-          ? parsed.filter((e) => e && typeof e.text === "string").slice(0, HISTORY_MAX)
-          : [];
-      } catch {
-        history = [];
-      }
-    }
-
-    function saveHistory() {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-    }
-
-    function formatHistoryTime(iso) {
-      const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return "";
-      return d.toLocaleString("ru-RU", {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    }
-
     function renderHistory() {
       historyListEl.querySelectorAll(".history-item").forEach((el) => el.remove());
-      historyEmptyEl.hidden = history.length > 0;
-      historyClearBtn.disabled = history.length === 0;
+      historyEmptyEl.hidden = historyStore.entries.length > 0;
+      historyClearBtn.disabled = historyStore.entries.length === 0;
 
-      history.forEach((entry) => {
+      historyStore.entries.forEach((entry) => {
         const li = document.createElement("li");
         li.className = "history-item";
         li.textContent = entry.text;
@@ -465,168 +445,29 @@
     }
 
     function addHistoryEntry(text) {
-      history.unshift({ text, at: new Date().toISOString() });
-      if (history.length > HISTORY_MAX) {
-        history.length = HISTORY_MAX;
-      }
-      saveHistory();
+      historyStore.add(text);
+      localStorage.setItem(HISTORY_KEY, historyStore.serialize());
       renderHistory();
     }
 
     function clearHistory() {
-      history = [];
-      saveHistory();
+      historyStore.clear();
+      localStorage.setItem(HISTORY_KEY, historyStore.serialize());
       renderHistory();
     }
 
     historyClearBtn.addEventListener("click", clearHistory);
-    loadHistory();
+    historyStore.load(localStorage.getItem(HISTORY_KEY));
     renderHistory();
 
-    let current = "0";
-    let stored = null;
-    let pendingOp = null;
-    let freshStart = false;
-
-    const OP_SYMBOL = { "+": "+", "-": "−", "*": "×", "/": "÷" };
-
-    function formatDisplay(numStr) {
-      if (numStr === "Ошибка") return numStr;
-      const n = parseFloat(numStr.replace(",", "."));
-      if (!Number.isFinite(n)) return "0";
-      const s = String(n);
-      return s.includes(".") ? s.replace(".", ",") : s;
-    }
-
     function updateDisplay() {
-      resultEl.textContent = formatDisplay(current);
-      if (stored !== null && pendingOp) {
-        expressionEl.textContent =
-          formatDisplay(String(stored)) + " " + OP_SYMBOL[pendingOp];
-      } else {
-        expressionEl.textContent = "";
-      }
-    }
-
-    function inputDigit(d) {
-      if (freshStart || current === "Ошибка") {
-        current = d;
-        freshStart = false;
-      } else if (current === "0") {
-        current = d;
-      } else if (current.replace("-", "").replace(",", "").length < 12) {
-        current += d;
-      }
-      updateDisplay();
-    }
-
-    function inputDecimal() {
-      if (freshStart || current === "Ошибка") {
-        current = "0,";
-        freshStart = false;
-      } else if (!current.includes(",")) {
-        current += ",";
-      }
-      updateDisplay();
-    }
-
-    function clearAll() {
-      current = "0";
-      stored = null;
-      pendingOp = null;
-      freshStart = false;
-      updateDisplay();
-    }
-
-    function backspace() {
-      if (current === "Ошибка") {
-        clearAll();
-        return;
-      }
-      if (freshStart) return;
-      if (current.length <= 1 || (current.length === 2 && current.startsWith("-"))) {
-        current = "0";
-      } else {
-        current = current.slice(0, -1);
-      }
-      updateDisplay();
-    }
-
-    function toNumber(str) {
-      return parseFloat(str.replace(",", "."));
-    }
-
-    function compute(a, op, b) {
-      switch (op) {
-        case "+": return a + b;
-        case "-": return a - b;
-        case "*": return a * b;
-        case "/":
-          if (b === 0) return null;
-          return a / b;
-        default: return b;
-      }
-    }
-
-    function applyPending() {
-      if (stored === null || !pendingOp) return;
-      const a = stored;
-      const b = toNumber(current);
-      const out = compute(a, pendingOp, b);
-      if (out === null) {
-        current = "Ошибка";
-        stored = null;
-        pendingOp = null;
-        freshStart = true;
-        return;
-      }
-      stored = out;
-      current = String(out);
-    }
-
-    function setOperator(op) {
-      if (current === "Ошибка") return;
-      const value = toNumber(current);
-      if (stored !== null && pendingOp && !freshStart) {
-        applyPending();
-        if (current === "Ошибка") {
-          updateDisplay();
-          return;
-        }
-        stored = toNumber(current);
-      } else {
-        stored = value;
-      }
-      pendingOp = op;
-      freshStart = true;
-      updateDisplay();
+      resultEl.textContent = calc.getResult();
+      expressionEl.textContent = calc.getExpression();
     }
 
     function equals() {
-      if (pendingOp === null || stored === null || current === "Ошибка") return;
-      const a = stored;
-      const b = toNumber(current);
-      const op = pendingOp;
-      applyPending();
-      const line =
-        formatDisplay(String(a)) +
-        " " +
-        OP_SYMBOL[op] +
-        " " +
-        formatDisplay(String(b)) +
-        " = " +
-        formatDisplay(current);
-      addHistoryEntry(line);
-      pendingOp = null;
-      stored = null;
-      freshStart = true;
-      updateDisplay();
-    }
-
-    function percent() {
-      if (current === "Ошибка") return;
-      const n = toNumber(current) / 100;
-      current = String(n);
+      const line = calc.equals();
+      if (line) addHistoryEntry(line);
       updateDisplay();
     }
 
@@ -637,42 +478,47 @@
 
       switch (action) {
         case "digit":
-          inputDigit(btn.dataset.digit);
+          calc.inputDigit(btn.dataset.digit);
           break;
         case "decimal":
-          inputDecimal();
+          calc.inputDecimal();
           break;
         case "operator":
-          setOperator(btn.dataset.op);
+          calc.setOperator(btn.dataset.op);
           break;
         case "equals":
           equals();
           break;
         case "clear":
-          clearAll();
+          calc.clearAll();
           break;
         case "backspace":
-          backspace();
+          calc.backspace();
           break;
         case "percent":
-          percent();
+          calc.percent();
           break;
       }
+
+      updateDisplay();
     });
 
     document.addEventListener("keydown", (e) => {
-      if (e.key >= "0" && e.key <= "9") inputDigit(e.key);
-      else if (e.key === "." || e.key === ",") inputDecimal();
-      else if (e.key === "+") setOperator("+");
-      else if (e.key === "-") setOperator("-");
-      else if (e.key === "*") setOperator("*");
+      if (e.key >= "0" && e.key <= "9") calc.inputDigit(e.key);
+      else if (e.key === "." || e.key === ",") calc.inputDecimal();
+      else if (e.key === "+") calc.setOperator("+");
+      else if (e.key === "-") calc.setOperator("-");
+      else if (e.key === "*") calc.setOperator("*");
       else if (e.key === "/") {
         e.preventDefault();
-        setOperator("/");
+        calc.setOperator("/");
       } else if (e.key === "Enter" || e.key === "=") equals();
-      else if (e.key === "Escape") clearAll();
-      else if (e.key === "Backspace") backspace();
-      else if (e.key === "%") percent();
+      else if (e.key === "Escape") calc.clearAll();
+      else if (e.key === "Backspace") calc.backspace();
+      else if (e.key === "%") calc.percent();
+      else return;
+
+      updateDisplay();
     });
 
     updateDisplay();
